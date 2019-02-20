@@ -33,10 +33,12 @@ var (
 // The storage separates the slug from the url using a simple space.
 
 var storage map[string]string
+var storageReverse map[string]string
 var storageMutex sync.RWMutex
 
 func init() {
 	storage = make(map[string]string)
+	storageReverse = make(map[string]string)
 }
 
 func readStorage() {
@@ -52,6 +54,7 @@ func readStorage() {
 		pieces := strings.SplitN(scanner.Text(), " ", 2)
 		if len(pieces) == 2 {
 			storage[pieces[0]] = pieces[1]
+			storageReverse[pieces[1]] = pieces[0]
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -138,15 +141,21 @@ func main() {
 			slug := r.PostFormValue("slug")
 			if secret == *SecretConfig && url != "" {
 				storageMutex.Lock()
-				_, exists := storage[slug]
-				if slug == "" || invalidSlug(slug) || exists {
-					slug = genUniqueSlug()
-				}
-				storage[slug] = url
-				writeStorage()
-				w.Write([]byte(fmt.Sprintf("%s/%s", *ServerNameConfig, slug)))
-				fmt.Fprintf(os.Stdout, " - added new shortening: %s for %s\n", slug, url)
 				defer storageMutex.Unlock()
+
+				existingSlug, existsReverse := storageReverse[url]
+				if existsReverse {
+					w.Write([]byte(fmt.Sprintf("%s/%s", *ServerNameConfig, existingSlug)))
+				} else {
+					_, exists := storage[slug]
+					if slug == "" || invalidSlug(slug) || exists {
+						slug = genUniqueSlug()
+					}
+					storage[slug] = url
+					writeStorage()
+					w.Write([]byte(fmt.Sprintf("%s/%s", *ServerNameConfig, slug)))
+					fmt.Fprintf(os.Stdout, " - added new shortening: %s for %s\n", slug, url)
+				}
 			} else {
 				http.Error(w, "Not authorized", http.StatusUnauthorized)
 			}
